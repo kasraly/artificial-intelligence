@@ -8,7 +8,9 @@ square_units = [cross(rs, cs) for rs in ('ABC','DEF','GHI') for cs in ('123','45
 unitlist = row_units + column_units + square_units
 
 # TODO: Update the unit list to add the new diagonal units
-unitlist = unitlist
+diagonal = [r+s for r,s in zip(rows, cols)]
+cross_diagonal = [r+s for r,s in zip(rows, cols[::-1])]
+unitlist = unitlist + [diagonal] + [cross_diagonal]
 
 
 # Must be called after all units (including diagonals) are added to the unitlist
@@ -54,7 +56,17 @@ def naked_twins(values):
     https://github.com/udacity/artificial-intelligence/blob/master/Projects/1_Sudoku/pseudocode.md
     """
     # TODO: Implement this function!
-    raise NotImplementedError
+    out = values.copy()
+    for unit in unitlist:
+        for first_box in unit:
+            if len(values[first_box]) == 2:
+                for second_box in unit:
+                    if first_box != second_box and values[first_box] == values[second_box]:
+                        for box in unit:
+                            if box != first_box and box != second_box:
+                                for digit in values[first_box]:
+                                    out[box] = out[box].replace(digit, "")
+    return out
 
 
 def eliminate(values):
@@ -74,7 +86,11 @@ def eliminate(values):
         The values dictionary with the assigned values eliminated from peers
     """
     # TODO: Copy your code from the classroom to complete this function
-    raise NotImplementedError
+    single_values = [box for box in values.keys() if len(values[box]) == 1]
+    for box in single_values:
+        for p in peers[box]:
+            values[p] = values[p].replace(values[box],'')
+    return values
 
 
 def only_choice(values):
@@ -98,8 +114,12 @@ def only_choice(values):
     You should be able to complete this function by copying your code from the classroom
     """
     # TODO: Copy your code from the classroom to complete this function
-    raise NotImplementedError
-
+    for unit in unitlist:
+        for digit in '123456789':
+            digit_places = [box for box in unit if digit in values[box]]
+            if len(digit_places) == 1:
+                values[digit_places[0]] = digit
+    return values
 
 def reduce_puzzle(values):
     """Reduce a Sudoku puzzle by repeatedly applying all constraint strategies
@@ -116,8 +136,18 @@ def reduce_puzzle(values):
         no longer produces any changes, or False if the puzzle is unsolvable 
     """
     # TODO: Copy your code from the classroom and modify it to complete this function
-    raise NotImplementedError
-
+    num_solved_values = len([box for box in values.keys() if len(values[box]) == 1])
+    progress = True
+    while progress:
+        values = eliminate(values)
+        values = only_choice(values)
+        values = naked_twins(values)
+        new_num_solved_values = len([box for box in values.keys() if len(values[box]) == 1])
+        progress = new_num_solved_values > num_solved_values
+        num_solved_values = new_num_solved_values
+        if len([box for box in values.keys() if len(values[box]) == 0]):
+            return False
+    return values
 
 def search(values):
     """Apply depth first search to solve Sudoku puzzles in order to solve puzzles
@@ -139,8 +169,21 @@ def search(values):
     and extending it to call the naked twins strategy.
     """
     # TODO: Copy your code from the classroom to complete this function
-    raise NotImplementedError
-
+    # First, reduce the puzzle using the previous function
+    values = reduce_puzzle(values)
+    if values is False:
+        return False ## Failed earlier
+    if all(len(values[s]) == 1 for s in boxes): 
+        return values ## Solved!
+    # Choose one of the unfilled squares with the fewest possibilities
+    n,s = min((len(values[s]), s) for s in boxes if len(values[s]) > 1)
+    # Now use recurrence to solve each one of the resulting sudokus, and 
+    for value in values[s]:
+        new_sudoku = values.copy()
+        new_sudoku[s] = value
+        attempt = search(new_sudoku)
+        if attempt:
+            return attempt
 
 def solve(grid):
     """Find the solution to a Sudoku puzzle using search and constraint propagation

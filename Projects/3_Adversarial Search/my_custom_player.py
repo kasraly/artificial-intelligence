@@ -1,9 +1,8 @@
 
-from math import sqrt
 from sample_players import DataPlayer
-from isolation import Isolation, DebugState
+# from isolation import Isolation, DebugState
 import random
-import numpy as np
+import math
 
 
 class CustomPlayer(DataPlayer):
@@ -61,43 +60,42 @@ class CustomPlayer(DataPlayer):
             else:
                 action, val = self.monte_carlo_tree_search_step()
             self.queue.put(action)
-    
-    # find actions in the lower right quadrant of the board for the opening move. 
-    # Given the board symmetry, we only need to consider opening actions in one quadrant of the board.
-    def lower_right_quad_actions(self, state):
-        width = 0
-        height = 0
-        for i in range(2, len(state.actions())):
-            x, y = DebugState.ind2xy(i)
-            if x == 0:
-                width = i-2
-                height = len(state.actions()) / width
-                break
-        actions = []
-        for i in state.actions():
-            x, y = DebugState.ind2xy(i)
-            if x <= (width + 1) // 2 and y <= (height+1) // 2: 
-                actions.append(i)
-        return actions
+
+    # removed as the the autograder was complaining about DebugState
+    # # find actions in the lower right quadrant of the board for the opening move. 
+    # # Given the board symmetry, we only need to consider opening actions in one quadrant of the board.
+    # def lower_right_quad_actions(self, state):
+    #     width = 0
+    #     height = 0
+    #     for i in range(2, len(state.actions())):
+    #         x, y = DebugState.ind2xy(i)
+    #         if x == 0:
+    #             width = i-2
+    #             height = len(state.actions()) / width
+    #             break
+    #     actions = []
+    #     for i in state.actions():
+    #         x, y = DebugState.ind2xy(i)
+    #         if x <= (width + 1) // 2 and y <= (height+1) // 2: 
+    #             actions.append(i)
+    #     return actions
 
 ##  alpha beta pruning tree search with incremental deepening
 
     def init_alpha_beta(self, state):
         self.alpha_beta_depth = 0
         self.alpha_beta_state = state
-        if state.ply_count == 0:
-            actions = self.lower_right_quad_actions(state)
-        else:
-            actions = state.actions()
-        self.alpha_beta_actions = actions
+        # if state.ply_count == 0:
+        #     actions = self.lower_right_quad_actions(state)
+        # else:
+        #     actions = state.actions()
+        self.alpha_beta_actions = state.actions()
         self.consistent_best_action_count = 0
-        self.prev_best_action = random.choice(actions)
     
     def alpha_beta_step(self):
         # with every call to the alpha_beta_step we increase the tree depth (incremental deepening)
         self.alpha_beta_depth += 1
         best_action, max_val = self.alpha_beta(self.alpha_beta_state, self.alpha_beta_actions, self.alpha_beta_depth)
-        self.prev_best_action = best_action
         return best_action, max_val
 
     def alpha_beta(self, state, actions, depth):
@@ -148,19 +146,20 @@ class CustomPlayer(DataPlayer):
     def init_monte_carlo_tree_search(self, root):
         self.tree = {}
         self.root = root
-        if root.ply_count == 0:
-            actions = self.lower_right_quad_actions(root)
-        else:
-            actions = root.actions()
+        # if root.ply_count == 0:
+        #     actions = self.lower_right_quad_actions(root)
+        # else:
+        #     actions = root.actions()
         # since argmax returns the first item when there are multiple items with the same max value, I shuffled the actions so that 
         # the order of action selection is randomized between runs. 
+        actions = root.actions()
         random.shuffle(actions)
         # create the root node
         self.tree[root] = {'depth': 0,
                            'state_visits': 0, 
                            'actions': actions, 
-                           'actions_visits': np.zeros(len(actions)), 
-                           'actions_wins': np.zeros(len(actions))}
+                           'actions_visits': [0] * len(actions),
+                           'actions_wins': [0] * len(actions)}
 
     def monte_carlo_tree_search_step(self):
         # number of MCTS iterations per step. 
@@ -168,8 +167,14 @@ class CustomPlayer(DataPlayer):
         for i in range(updates_per_call):
             utility = self.expand_node(self.root)
         root_dict = self.tree[self.root]
-        best_action_idx = np.argmax(root_dict['actions_wins'] / root_dict['actions_visits'])
-        return root_dict['actions'][best_action_idx], root_dict['actions_wins'][best_action_idx] / root_dict['actions_visits'][best_action_idx]
+        best_action_idx = 0
+        best_action_val = root_dict['actions_wins'][0] / root_dict['actions_visits'][0]
+        for i in range(len(root_dict['actions_wins'])):
+            val = root_dict['actions_wins'][i] / root_dict['actions_visits'][i]
+            if val > best_action_val:
+                best_action_idx = i
+                best_action_val = val
+        return root_dict['actions'][best_action_idx], best_action_val
 
     def expand_node(self, state):
         # the `state_visits` is increased here so that the `ln(state_visits)` be meaningful in the first call, the impact on the accuracy of UCB1 function should be minimal
@@ -188,11 +193,18 @@ class CustomPlayer(DataPlayer):
         return utility
 
     def select_action(self, state_dict):
-        # adding a small number to avoid division by zero for actions that have not been expanded yet. 
-        actions_visits = state_dict['actions_visits'] + 1e-3
         c = 1
-        ucb = state_dict['actions_wins']/actions_visits + c * np.sqrt(2 * np.log(state_dict['state_visits']) / actions_visits)
-        return np.argmax(ucb)
+        ucb_action_idx = 0
+        # adding a small number to avoid division by zero for actions that have not been expanded yet. 
+        action_visits = state_dict['actions_visits'][0] + 1e-3
+        ucb_action_val = state_dict['actions_wins'][0]/action_visits + c * math.sqrt(2 * math.log(state_dict['state_visits']) / action_visits)
+        for i in range(1, len(state_dict['actions_wins'])):
+            action_visits = state_dict['actions_visits'][i] + 1e-3
+            val = state_dict['actions_wins'][i]/action_visits + c * math.sqrt(2 * math.log(state_dict['state_visits']) / action_visits)
+            if val > ucb_action_val:
+                ucb_action_idx = i
+                ucb_action_val = val
+        return ucb_action_idx
 
     def expand_action(self, state, action):
         next_state = state.result(action)
@@ -211,8 +223,8 @@ class CustomPlayer(DataPlayer):
             self.tree[next_state] = {'depth': self.tree[state]['depth'] + 1, 
                                      'state_visits': 0, 
                                      'actions': actions, 
-                                     'actions_visits': np.zeros(len(actions)), 
-                                     'actions_wins': np.zeros(len(actions))}
+                                     'actions_visits': [0] * len(actions), 
+                                     'actions_wins': [0] * len(actions)}
         return self.expand_node(next_state)
 
     def monte_carlo_sim(self, state):
